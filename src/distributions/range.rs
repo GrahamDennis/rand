@@ -53,6 +53,8 @@ pub struct Range<X> {
     accept_zone: X
 }
 
+impl <X: Copy> Copy for Range<X> {}
+
 impl<X: SampleRange + PartialOrd> Range<X> {
     /// Create a new `Range` instance that samples uniformly from
     /// `[low, high)`. Panics if `low >= high`.
