@@ -62,6 +62,16 @@ impl<T> RandDistribution<T> {
     }
 }
 
+pub struct ConstantDistribution<T>(pub T);
+
+impl<T: Clone> Distribution for ConstantDistribution<T> {
+    type Output = T;
+
+    fn sample<R: Rng>(&self, _: &mut R) -> T {
+        self.0.clone()
+    }
+}
+
 /// A value with a particular weight for use with `WeightedChoice`.
 #[derive(Copy)]
 #[derive(Clone)]
