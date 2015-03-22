@@ -54,6 +54,7 @@ pub trait IndependentSample<Support>: Sample<Support> {
 
 /// A wrapper for generating types that implement `Rand` via the
 /// `Sample` & `IndependentSample` traits.
+#[derive(Copy)]
 pub struct RandSample<Sup> {
     _marker: marker::PhantomData<fn() -> Sup>,
 }
@@ -81,6 +82,8 @@ pub struct Weighted<T> {
     /// The actual item which is being weighted
     pub item: T,
 }
+
+impl <T: Copy> Copy for Weighted<T> {}
 
 /// A distribution that selects from a finite collection of weighted items.
 ///
