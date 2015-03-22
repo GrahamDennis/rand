@@ -94,7 +94,7 @@
 //! and multiply this fraction by 4.
 //!
 //! ```
-//! use rand::distributions::{IndependentSample, Range};
+//! use rand::distributions::{Distribution, Range};
 //!
 //! fn main() {
 //!    let between = Range::new(-1f64, 1.);
@@ -104,8 +104,8 @@
 //!    let mut in_circle = 0;
 //!
 //!    for _ in 0..total {
-//!        let a = between.ind_sample(&mut rng);
-//!        let b = between.ind_sample(&mut rng);
+//!        let a = between.sample(&mut rng);
+//!        let b = between.sample(&mut rng);
 //!        if a*a + b*b <= 1. {
 //!            in_circle += 1;
 //!        }
@@ -137,7 +137,7 @@
 //!
 //! ```
 //! use rand::Rng;
-//! use rand::distributions::{IndependentSample, Range};
+//! use rand::distributions::{Distribution, Range};
 //!
 //! struct SimulationResult {
 //!     win: bool,
@@ -147,10 +147,10 @@
 //! // Run a single simulation of the Monty Hall problem.
 //! fn simulate<R: Rng>(random_door: &Range<u32>, rng: &mut R)
 //!                     -> SimulationResult {
-//!     let car = random_door.ind_sample(rng);
+//!     let car = random_door.sample(rng);
 //!
 //!     // This is our initial choice
-//!     let mut choice = random_door.ind_sample(rng);
+//!     let mut choice = random_door.sample(rng);
 //!
 //!     // The game host opens a door
 //!     let open = game_host_open(car, choice, rng);
@@ -236,6 +236,7 @@ use std::mem;
 use std::io;
 use std::rc::Rc;
 use std::num::wrapping::Wrapping as w;
+use std::num::Int;
 
 pub use os::OsRng;
 
@@ -247,8 +248,8 @@ use IsaacRng as IsaacWordRng;
 #[cfg(target_pointer_width = "64")]
 use Isaac64Rng as IsaacWordRng;
 
-use distributions::{Range, IndependentSample};
-use distributions::range::SampleRange;
+use distributions::{Range, Distribution};
+use distributions::range::RangeDistribution;
 
 pub mod distributions;
 pub mod isaac;
@@ -415,6 +416,14 @@ pub trait Rng : Sized {
         Generator { rng: self, _marker: marker::PhantomData }
     }
 
+    fn sample<'a, D: Distribution>(&'a mut self, distribution: &'a D) -> <D as Distribution>::Output {
+        distribution.sample(self)
+    }
+
+    fn sample_iter<'a, D: Distribution>(&'a mut self, distribution: &'a D) -> SampleIter<'a, Self, D> {
+        SampleIter { rng: self, distribution: distribution }
+    }
+
     /// Generate a random value in the range [`low`, `high`).
     ///
     /// This is a convenience wrapper around
@@ -438,9 +447,9 @@ pub trait Rng : Sized {
     /// let m: f64 = rng.gen_range(-40.0f64, 1.3e5f64);
     /// println!("{}", m);
     /// ```
-    fn gen_range<T: PartialOrd + SampleRange>(&mut self, low: T, high: T) -> T {
+    fn gen_range<T: PartialOrd + RangeDistribution>(&mut self, low: T, high: T) -> T {
         assert!(low < high, "Rng.gen_range called with low >= high");
-        Range::new(low, high).ind_sample(self)
+        Range::new(low, high).sample(self)
     }
 
     /// Return a bool with a 1 in n chance of true
@@ -531,6 +540,23 @@ impl<'a, T: Rand, R: Rng> Iterator for Generator<'a, T, R> {
 
     fn next(&mut self) -> Option<T> {
         Some(self.rng.gen())
+    }
+}
+
+pub struct SampleIter<'a, R:'a, D:'a> {
+    rng: &'a mut R,
+    distribution: &'a D,
+}
+
+impl <'a, R: Rng, D: Distribution> Iterator for SampleIter<'a, R, D> {
+    type Item = <D as Distribution>::Output;
+
+    fn next(&mut self) -> Option<<D as Distribution>::Output> {
+        Some(self.distribution.sample(self.rng))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (Int::max_value(), None)
     }
 }
 
