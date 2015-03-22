@@ -64,7 +64,7 @@ impl<T> RandDistribution<T> {
     }
 }
 
-pub struct ConstantDistribution<T>(T);
+pub struct ConstantDistribution<T>(pub T);
 
 impl <T: Copy> Copy for ConstantDistribution<T> {}
 
