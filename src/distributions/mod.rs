@@ -43,6 +43,33 @@ pub trait Distribution {
     fn sample<R: Rng>(&self, rng: &mut R) -> <Self as Distribution>::Output;
 }
 
+/// This, together with `NewRandom` below is the replacement trait for `Rand`.  Instead of having `Rand::rand(&mut rng) -> T`, you now call
+/// `T::default_distribution().sample(&mut rng)`.  This can be simplified to `NewRandom::rand(&mut rng) -> T`.
+pub trait DefaultDistribution {
+    type OutputDistribution: Distribution<Output=Self>;
+    
+    fn default_distribution() -> <Self as DefaultDistribution>::OutputDistribution;
+}
+
+pub trait NewRandom {
+    fn rand<R: Rng>(rng: &mut R) -> Self;
+}
+
+impl <T> NewRandom for T where T: DefaultDistribution
+{
+    fn rand<R: Rng>(rng: &mut R) -> Self {
+        T::default_distribution().sample(rng)
+    }
+}
+
+impl <T: Rand> DefaultDistribution for T {
+    type OutputDistribution = RandDistribution<T>;
+    
+    fn default_distribution() -> RandDistribution<T> {
+        RandDistribution::new()
+    }
+}
+
 /// A wrapper for generating types that implement `Distribution` via the
 /// `Rand` trait.
 pub struct RandDistribution<T> {
@@ -262,7 +289,7 @@ fn ziggurat<R: Rng, P, Z>(
 mod tests {
 
     use {Rng, Rand};
-    use super::{RandDistribution, WeightedChoice, Weighted, Distribution};
+    use super::{RandDistribution, WeightedChoice, Weighted, Distribution, NewRandom};
 
     #[derive(PartialEq, Debug)]
     struct ConstRand(usize);
@@ -290,6 +317,12 @@ mod tests {
 
         assert_eq!(rand_sample.sample(&mut ::test::rng()), ConstRand(0));
     }
+    
+    #[test]
+    fn test_new_random() {
+        let i: u8 = NewRandom::rand(&mut ::test::rng());
+    }
+    
     #[test]
     fn test_weighted_choice() {
         // this makes assumptions about the internal implementation of
