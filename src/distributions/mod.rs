@@ -18,6 +18,7 @@
 
 use std::num::{Float, Int};
 use std::marker;
+use std::ops::{RangeFull, Range};
 
 use {Rng, Rand};
 
@@ -46,9 +47,9 @@ pub trait Distribution {
 /// This, together with `NewRandom` below is the replacement trait for `Rand`.  Instead of having `Rand::rand(&mut rng) -> T`, you now call
 /// `T::default_distribution().sample(&mut rng)`.  This can be simplified to `NewRandom::rand(&mut rng) -> T`.
 pub trait DefaultDistribution {
-    type OutputDistribution: Distribution<Output=Self>;
-    
-    fn default_distribution() -> <Self as DefaultDistribution>::OutputDistribution;
+    type Distribution: Distribution<Output=Self>;
+
+    fn default_distribution() -> <Self as DefaultDistribution>::Distribution;
 }
 
 pub trait NewRandom {
@@ -63,9 +64,23 @@ impl <T> NewRandom for T where T: DefaultDistribution
 }
 
 impl <T: Rand> DefaultDistribution for T {
-    type OutputDistribution = RandDistribution<T>;
-    
+    type Distribution = RandDistribution<T>;
+
     fn default_distribution() -> RandDistribution<T> {
+        RandDistribution::new()
+    }
+}
+
+pub trait ToDistribution<T> {
+    type Distribution: Distribution<Output=T>;
+
+    fn to_distribution(&self) -> <Self as ToDistribution<T>>::Distribution;
+}
+
+impl <T: Rand> ToDistribution<T> for RangeFull {
+    type Distribution = RandDistribution<T>;
+
+    fn to_distribution(&self) -> RandDistribution<T> {
         RandDistribution::new()
     }
 }
@@ -317,12 +332,12 @@ mod tests {
 
         assert_eq!(rand_sample.sample(&mut ::test::rng()), ConstRand(0));
     }
-    
+
     #[test]
     fn test_new_random() {
         let i: u8 = NewRandom::rand(&mut ::test::rng());
     }
-    
+
     #[test]
     fn test_weighted_choice() {
         // this makes assumptions about the internal implementation of
