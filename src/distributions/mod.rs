@@ -18,11 +18,11 @@
 
 use std::num::{Float, Int};
 use std::marker;
-use std::ops::{RangeFull, Range};
+use std::ops;
 
 use {Rng, Rand};
 
-pub use self::range::Range;
+pub use self::range::{Range, RangeDistribution};
 pub use self::gamma::{Gamma, ChiSquared, FisherF, StudentT};
 pub use self::normal::{Normal, LogNormal};
 pub use self::exponential::Exp;
@@ -52,6 +52,7 @@ pub trait DefaultDistribution {
     fn default_distribution() -> <Self as DefaultDistribution>::Distribution;
 }
 
+/// This is a duplicate of the `Rand` trait, for testing a new design of the Random crate.
 pub trait NewRandom {
     fn rand<R: Rng>(rng: &mut R) -> Self;
 }
@@ -71,22 +72,54 @@ impl <T: Rand> DefaultDistribution for T {
     }
 }
 
-pub trait ToDistribution<T> {
+/// A helper trait for converting things that describe distributions (like `std::ops::Range`) into actual distributions that can be sampled from.
+pub trait IntoDistribution<T> {
     type Distribution: Distribution<Output=T>;
 
-    fn to_distribution(&self) -> <Self as ToDistribution<T>>::Distribution;
+    fn into_distribution(self) -> <Self as IntoDistribution<T>>::Distribution;
 }
 
-impl <T: Rand> ToDistribution<T> for RangeFull {
+// `rng.sample(..) -> T` is equivalent to `T::rand(&mut rng)`, which is equivalent to `T::default_distribution().sample(&mut rng)`
+impl <T: Rand> IntoDistribution<T> for ops::RangeFull {
     type Distribution = RandDistribution<T>;
 
-    fn to_distribution(&self) -> RandDistribution<T> {
+    fn into_distribution(self) -> RandDistribution<T> {
         RandDistribution::new()
     }
 }
 
+// `rng.sample(a..b)` samples the half-open interval `[a, b)`.
+impl <Idx> IntoDistribution<Idx> for ops::Range<Idx> where
+    Idx: RangeDistribution + PartialOrd
+{
+    type Distribution = Range<Idx>;
+
+    fn into_distribution(self) -> Range<Idx> {
+        Range::new(self.start, self.end)
+    }
+}
+
+/// A reference to a `Distribution` is also a `Distribution`.
+impl <'a, D> Distribution for &'a D where D: Distribution {
+    type Output = <D as Distribution>::Output;
+
+    fn sample<R: Rng>(&self, rng: &mut R) -> <D as Distribution>::Output {
+        (*self).sample(rng)
+    }
+}
+
+/// A `Distribution` can be trivially converted into a `Distribution`.
+impl <T, D> IntoDistribution<T> for D where
+    D: Distribution<Output=T>
+{
+    type Distribution = D;
+
+    fn into_distribution(self) -> D { self }
+}
+
 /// A wrapper for generating types that implement `Distribution` via the
 /// `Rand` trait.
+#[derive(PartialEq, Eq, Debug)]
 pub struct RandDistribution<T> {
     _marker: marker::PhantomData<fn() -> T>,
 }
@@ -304,7 +337,7 @@ fn ziggurat<R: Rng, P, Z>(
 mod tests {
 
     use {Rng, Rand};
-    use super::{RandDistribution, WeightedChoice, Weighted, Distribution, NewRandom};
+    use super::{RandDistribution, WeightedChoice, Weighted, Distribution, NewRandom, DefaultDistribution};
 
     #[derive(PartialEq, Debug)]
     struct ConstRand(usize);
@@ -335,7 +368,43 @@ mod tests {
 
     #[test]
     fn test_new_random() {
-        let i: u8 = NewRandom::rand(&mut ::test::rng());
+        let mut rng = CountingRng { i: 42 };
+        let i: u8 = NewRandom::rand(&mut rng);
+
+        assert_eq!(i, 42);
+    }
+
+    #[test]
+    fn test_default_distribution() {
+        let distribution = u8::default_distribution();
+
+        assert_eq!(distribution, RandDistribution::new());
+    }
+
+    #[test]
+    fn test_sample_full_range() {
+        let mut rng = CountingRng { i: 42 };
+        let i = rng.sample(..);
+
+        assert_eq!(i, 42);
+    }
+
+    #[test]
+    fn test_sample_iter_full_range() {
+        let mut rng = CountingRng { i: 42 };
+        let mut iter = rng.sample_iter(..);
+
+        assert_eq!(iter.next(), Some(42));
+        assert_eq!(iter.next(), Some(43));
+        assert_eq!(iter.next(), Some(44));
+    }
+
+    #[test]
+    fn test_partial_range() {
+        let mut rng = CountingRng { i: 42 };
+
+        assert_eq!(rng.sample(0..50), 42);
+        assert_eq!(rng.sample(1..51), 44);
     }
 
     #[test]
@@ -395,7 +464,7 @@ mod tests {
     #[test]
     fn test_weighted_clone_initialization() {
         let initial : Weighted<u32> = Weighted {weight: 1, item: 1};
-        let mut clone = initial.clone();
+        let clone = initial.clone();
         assert_eq!(initial.weight, clone.weight);
         assert_eq!(initial.item, clone.item);
     }

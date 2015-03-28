@@ -236,6 +236,7 @@ use std::mem;
 use std::io;
 use std::rc::Rc;
 use std::num::wrapping::Wrapping as w;
+use std::num::Int;
 
 pub use os::OsRng;
 
@@ -247,7 +248,7 @@ use IsaacRng as IsaacWordRng;
 #[cfg(target_pointer_width = "64")]
 use Isaac64Rng as IsaacWordRng;
 
-use distributions::{Range, Distribution};
+use distributions::{Range, Distribution, IntoDistribution};
 use distributions::range::RangeDistribution;
 
 pub mod distributions;
@@ -415,6 +416,16 @@ pub trait Rng : Sized {
         Generator { rng: self, _marker: marker::PhantomData }
     }
 
+    fn sample<T, D: IntoDistribution<T>>(&mut self, distribution_like: D) -> T {
+        distribution_like.into_distribution().sample(self)
+    }
+
+    fn sample_iter<'a, T, D: IntoDistribution<T>>(&'a mut self, distribution_like: D)
+        -> SampleIter<'a, Self, <D as IntoDistribution<T>>::Distribution>
+    {
+        SampleIter { rng: self, distribution: distribution_like.into_distribution() }
+    }
+
     /// Generate a random value in the range [`low`, `high`).
     ///
     /// This is a convenience wrapper around
@@ -531,6 +542,23 @@ impl<'a, T: Rand, R: Rng> Iterator for Generator<'a, T, R> {
 
     fn next(&mut self) -> Option<T> {
         Some(self.rng.gen())
+    }
+}
+
+pub struct SampleIter<'a, R:'a, D:'a> {
+    rng: &'a mut R,
+    distribution: D,
+}
+
+impl <'a, R: Rng, D: Distribution> Iterator for SampleIter<'a, R, D> {
+    type Item = <D as Distribution>::Output;
+
+    fn next(&mut self) -> Option<<D as Distribution>::Output> {
+        Some(self.distribution.sample(self.rng))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (Int::max_value(), None)
     }
 }
 
